@@ -1,70 +1,82 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <semaphore.h>
+#include <unistd.h>
 
-int n;
-int **X;
+#define n 10
+
+typedef struct
+{
+    int line, column;
+} Pos;
+
+int X[n][n];
+sem_t S[n][n];
 
 pthread_barrier_t bar;
-pthread_barrier_t bar2;
 
-void *funcao(void *line)
+void *funcao(void *args)
 {
-    int aux = (int)line;
-    for (int column = 0; column < n; column++)
+    Pos posicao = *((Pos *)args);
+    int i = posicao.line;
+    int j = posicao.column;
+
+    if (j == 0)
     {
-        if (column == 0)
-        {
-            X[aux][column] = rand() % 10;
-        }
-        else
-        {
-            X[aux][column] = X[rand() % n][rand() % column];
-        }
-        pthread_barrier_wait(&bar);
+        X[i][j] = rand() % 10;
+        sem_post(&S[i][j]);
     }
-    pthread_barrier_wait(&bar2);
-    pthread_exit(NULL);
+    else
+    {
+        int line = rand() % n;
+        int column = rand() % j;
+        sem_wait(&S[line][column]);
+        X[i][j] = X[line][column];
+        sem_post(&S[i][j]);
+        sem_post(&S[line][column]);
+    }
+
+    pthread_barrier_wait(&bar);
 }
 
 int main(int argc, char const *argv[])
 {
 
-    n = atoi(argv[1]);
+    pthread_t threads[n][n];
 
-    X = malloc(n * sizeof(int *));
+    pthread_barrier_init(&bar, NULL, n * n + 1);
+
     for (int i = 0; i < n; i++)
     {
-        X[i] = malloc(n * sizeof(int));
+        for (int j = 0; j < n; j++)
+        {
+            sem_init(&S[i][j], 0, 0);
+        }
     }
 
-    pthread_t threads[n];
+    Pos pos[n][n];
 
-    pthread_barrier_init(&bar, NULL, n);
-    pthread_barrier_init(&bar2, NULL, n + 1);
-
-    for (int line = 0; line < n; line++)
+    for (int i = 0; i < n; i++)
     {
-        threads[line] = pthread_create(&threads[line], NULL, funcao, (void *)line);
+        for (int j = 0; j < n; j++)
+        {
+            pos[i][j].line = i;
+            pos[i][j].column = j;
+            threads[i][j] = pthread_create(&threads[i][j], NULL, funcao, (void *)&pos[i][j]);
+        }
     }
 
-    pthread_barrier_wait(&bar2);
+    pthread_barrier_wait(&bar);
 
     for (int line = 0; line < n; line++)
     {
         for (int column = 0; column < n; column++)
         {
-            int *aux = X[line];
-            printf("%d, ", aux[column]);
+            printf("%d, ", X[line][column]);
         }
         printf("\n");
     }
-
-    for (int i = 0; i < n; i++)
-    {
-        free(X[i]);
-    }
-    free(X);
 
     return 0;
 }
